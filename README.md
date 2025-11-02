@@ -25,6 +25,8 @@ A microservices-based distributed system implementing the **Saga Choreography Pa
 
 ## 🏗 System Architecture
 
+![System Architecture](./system_architechture.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                         API Gateway (8080)                       │
