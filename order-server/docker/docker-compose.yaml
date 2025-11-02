@@ -1,0 +1,9 @@
+services:
+  mysql-db-order:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: orderdb
+    ports:
+      - "3306:3306"
