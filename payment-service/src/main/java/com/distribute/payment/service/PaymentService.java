@@ -30,6 +30,9 @@ public class PaymentService {
     @Autowired
     private PaymentRepository paymentRepository;
 
+    @Autowired
+    private OutboxService outboxService;
+
     // @Autowired
     // private PaymentProducer paymentProducer;
 
@@ -130,24 +133,27 @@ public class PaymentService {
             if (processingResult) {
                 payment.setStatus(PaymentStatus.PAID);
                 log.info("Payment processed successfully for ID: {}", id);
-                // Publish event to Kafka
-                // paymentProducer.publishPaymentAuthorizeSuccess(payment.getOrderId(), payment.getId());
             } else {
                 payment.setStatus(PaymentStatus.FAILED);
                 log.warn("Payment processing failed for ID: {}", id);
-                // paymentProducer.publishPaymentAuthorizeFailed(payment.getOrderId(), payment.getId(),
-                //         "Processing failed");
             }
 
             payment.setMethod(paymentProcessDto.getMethod());
 
             Payment updatedPayment = paymentRepository.save(payment);
 
+            // ✅ Save event to outbox (Debezium will publish this to Kafka)
+            outboxService.savePaymentProcessedEvent(updatedPayment, id.toString());
+
             return convertToResponseDto(updatedPayment);
 
         } catch (Exception e) {
             payment.setStatus(PaymentStatus.FAILED);
-            paymentRepository.save(payment);
+            Payment failedPayment = paymentRepository.save(payment);
+            
+            // ✅ Save failed event to outbox
+            outboxService.savePaymentFailedEvent(failedPayment, id.toString(), e.getMessage());
+            
             log.error("Error processing payment for ID: {}", id, e);
             throw new PaymentProcessingException("Failed to process payment: " + e.getMessage());
         }
@@ -178,7 +184,8 @@ public class PaymentService {
 
             Payment updatedPayment = paymentRepository.save(payment);
 
-            // paymentProducer.publishPaymentRefund(payment.getOrderId(), payment.getId(), reason);
+            // ✅ Save event to outbox (Debezium will publish this to Kafka)
+            outboxService.savePaymentRefundedEvent(updatedPayment, id.toString(), reason);
 
             return convertToResponseDto(updatedPayment);
 
@@ -203,6 +210,20 @@ public class PaymentService {
     @Transactional(readOnly = true)
     public boolean existsByOrderId(Integer orderId) {
         return paymentRepository.existsByOrderId(orderId);
+    }
+
+    @Transactional
+    public void savePaymentAuthorizeSucceeded(Payment payment) {
+        // Save payment and event to outbox in same transaction
+        paymentRepository.save(payment);
+        outboxService.savePaymentAuthorizeSucceededEvent(payment, payment.getOrderId().toString());
+    }
+
+    @Transactional
+    public void savePaymentAuthorizeFailed(Payment payment, String reason) {
+        // Save payment and event to outbox in same transaction
+        paymentRepository.save(payment);
+        outboxService.savePaymentAuthorizeFailedEvent(payment, payment.getOrderId().toString(), reason);
     }
 
     private boolean simulatePaymentProcessing(Payment payment) {

@@ -13,4 +13,14 @@ public interface OutboxService {
      * Save order updated event to outbox
      */
     void saveOrderUpdatedEvent(Order order, String requestId);
+    
+    /**
+     * Save notification send event to outbox
+     */
+    void saveNotificationSendEvent(Integer orderId, String type, String message, String requestId);
+    
+    /**
+     * Save stock reserve release event to outbox
+     */
+    void saveStockReserveReleaseEvent(Order order, String requestId);
 }

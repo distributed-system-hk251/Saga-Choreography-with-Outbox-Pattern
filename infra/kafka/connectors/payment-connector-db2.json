@@ -8,14 +8,25 @@
     "database.user": "root",
     "database.password": "root",
     "database.server.id": "103",
-    "topic.prefix": "dbserver2",
+    "topic.prefix": "dbserver4",
     "database.include.list": "paymentdb",
+    "table.include.list": "paymentdb.outbox",
 
     "schema.history.internal.kafka.bootstrap.servers": "broker:9092",
     "schema.history.internal.kafka.topic": "schema-changes.payment-db2",
 
-    "transforms": "unwrap",
-    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
-    "transforms.unwrap.drop.tombstones": "false"
+    "snapshot.mode": "initial",
+
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.id": "id",
+    "transforms.outbox.table.field.event.key": "aggregate_id",
+    "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.timestamp": "created_at",
+    "transforms.outbox.route.by.field": "aggregate_type",
+    "transforms.outbox.route.topic.replacement": "outbox.event.${routedByValue}",
+    "transforms.outbox.table.expand.json.payload": "true",
+    "transforms.outbox.table.fields.additional.placement": "event_type:header:eventType"
   }
 }

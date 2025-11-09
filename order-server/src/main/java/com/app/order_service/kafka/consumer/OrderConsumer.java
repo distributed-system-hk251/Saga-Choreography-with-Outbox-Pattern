@@ -8,10 +8,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 
-import java.math.BigDecimal;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,129 +31,156 @@ public class OrderConsumer {
     private OrderProducer orderProducer;
 
     /**
-     * Listen to Product CDC changes to know when stock is reserved/failed
-     * Topic: dbserver1.productdb.products (or similar based on Debezium config)
+     * Listen to Product Outbox events via Debezium CDC
+     * Topic: outbox.event.Product (Debezium outbox transformed topic)
+     * Filter by event_type: STOCK_RESERVE_SUCCEEDED, STOCK_RESERVE_FAILED
      */
     @KafkaListener(
-        topics = "${spring.kafka.topics.product-cdc:dbserver1.productdb.products}",
+        topics = "${spring.kafka.topics.product-outbox:outbox.event.Product}",
         groupId = "order-service-product-group"
     )
-    public void onProductChange(String message) {
+    public void onProductOutboxEvent(
+            @Payload String message,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = "eventType", required = false) String eventType) {
         try {
-            log.info("Received product CDC event");
+            log.info("Received product event from topic: {}, partition: {}, offset: {}, eventType: {}", 
+                    topic, partition, offset, eventType);
+            log.debug("Message content: {}", message);
             
+            // Parse event payload (already transformed by Debezium Outbox Router)
+            // Message has schema + payload structure, extract payload
             JsonNode rootNode = objectMapper.readTree(message);
-            JsonNode payload = rootNode.path("payload");
-            String operation = payload.path("op").asText();
+            JsonNode eventData;
             
-            // Only process UPDATE operations
-            if (!"u".equals(operation)) {
-                return;
+            if (rootNode.has("payload") && rootNode.has("schema")) {
+                // Payload is expanded as JSON object
+                eventData = rootNode.get("payload");
+            } else {
+                // Fallback: parse directly
+                eventData = rootNode;
             }
             
-            JsonNode after = payload.path("after");
+            Integer orderId = eventData.path("orderId").asInt();
             
-            // Extract product data to determine stock changes
-            Integer productId = after.path("id").asInt();
-            Integer stock = after.path("stock").asInt();
+            log.info("Processing product event type: {}", eventType);
             
-            log.debug("Product {} stock updated to: {}", productId, stock);
-            
-            // Note: In real implementation, you might need to track stock reservations
-            // and correlate them with orders using a separate reservation table
+            switch (eventType) {
+                case "STOCK_RESERVE_SUCCEEDED":
+                    // Stock reserved successfully, update order status
+                    log.info("Stock reserved successfully for order {}", orderId);
+                    Order updatedOrder = orderService.updateOrderStatus(orderId, OrderStatus.STOCK_RESERVED, null);
+                    
+                    // Automatically trigger payment authorization since we don't have /pay API yet
+                    if (updatedOrder != null && updatedOrder.getTotalAmount() != null) {
+                        orderProducer.publishPaymentAuthorize(orderId, updatedOrder.getTotalAmount());
+                        log.info("Auto-triggered payment authorization for order {} with amount {}", 
+                                orderId, updatedOrder.getTotalAmount());
+                    }
+                    break;
+                    
+                case "STOCK_RESERVE_FAILED":
+                    // Stock reservation failed
+                    String reason = eventData.path("reason").asText("Stock not available");
+                    log.info("Stock reservation failed for order {}: {}", orderId, reason);
+                    
+                    // Handle stock reservation failure: update status and send notification
+                    // All events (ORDER_STATUS_UPDATED, NOTIFICATION_SEND) 
+                    // will be saved to outbox in one transaction
+                    orderService.handleStockReserveFailed(orderId, reason);
+                    log.info("✅ Stock reservation failure handled for order {}", orderId);
+                    break;
+                    
+                default:
+                    log.debug("Unhandled product event type: {}", eventType);
+            }
             
         } catch (Exception e) {
-            log.error("Error processing product CDC event", e);
+            log.error("Error processing product outbox CDC event", e);
         }
     }
 
     /**
-     * Listen to Payment CDC changes to update order status
-     * Topic: dbserver2.paymentdb.payments (or similar based on Debezium config)
+     * Listen to Payment Outbox events via Debezium CDC
+     * Topic: outbox.event.Payment (Debezium outbox transformed topic)
+     * Filter by event_type: PAYMENT_AUTHORIZE_SUCCEEDED, PAYMENT_AUTHORIZE_FAILED
      */
     @KafkaListener(
-        topics = "${spring.kafka.topics.payment-cdc:dbserver2.paymentdb.payments}",
+        topics = "${spring.kafka.topics.payment-outbox:outbox.event.Payment}",
         groupId = "order-service-payment-group"
     )
-    public void onPaymentChange(String message) {
+    public void onPaymentOutboxEvent(
+            @Payload String message,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = "eventType", required = false) String eventType) {
         try {
-            log.info("Received payment CDC event");
+            log.info("Received payment event from topic: {}, partition: {}, offset: {}, eventType: {}", 
+                    topic, partition, offset, eventType);
+            log.debug("Message content: {}", message);
             
+            // Parse event payload (already transformed by Debezium Outbox Router)
+            // Message has schema + payload structure, extract payload
             JsonNode rootNode = objectMapper.readTree(message);
-            JsonNode payload = rootNode.path("payload");
-            String operation = payload.path("op").asText();
+            JsonNode eventData;
             
-            // Process CREATE and UPDATE operations
-            if (!"c".equals(operation) && !"u".equals(operation)) {
-                return;
+            if (rootNode.has("payload") && rootNode.has("schema")) {
+                // Payload is expanded as JSON object
+                eventData = rootNode.get("payload");
+            } else {
+                // Fallback: parse directly
+                eventData = rootNode;
             }
             
-            JsonNode after = payload.path("after");
+            Integer orderId = eventData.path("orderId").asInt();
             
-            Integer paymentId = after.path("id").asInt();
-            Integer orderId = after.path("order_id").asInt();
-            String status = after.path("status").asText();
-            BigDecimal amount = new BigDecimal(after.path("amount").asText());
+            log.info("Processing payment event type: {}", eventType);
             
-            log.info("Payment {} for order {} changed to status: {}", paymentId, orderId, status);
-            
-            // Update order status based on payment status
-            switch (status) {
-                case "PAID":
-                    // Payment successful
-                    if ("u".equals(operation)) {
-                        JsonNode before = payload.path("before");
-                        String oldStatus = before.path("status").asText();
-                        
-                        if (!"PAID".equals(oldStatus)) {
-                            orderService.updateOrderStatus(orderId, OrderStatus.PAID, null);
-                            log.info("Order {} marked as PAID", orderId);
-                        }
-                    }
+            switch (eventType) {
+                case "PAYMENT_AUTHORIZE_SUCCEEDED":
+                    // Payment authorized successfully
+                    log.info("Payment authorized successfully for order {}", orderId);
+                    
+                    // Handle payment success: update status and send notification
+                    // All events (ORDER_STATUS_UPDATED, NOTIFICATION_SEND) 
+                    // will be saved to outbox in one transaction
+                    orderService.handlePaymentSuccess(orderId);
+                    log.info("✅ Payment success handled for order {}", orderId);
                     break;
                     
-                case "FAILED":
-                    // Payment failed
-                    if ("u".equals(operation)) {
-                        JsonNode before = payload.path("before");
-                        String oldStatus = before.path("status").asText();
-                        
-                        if (!"FAILED".equals(oldStatus)) {
-                            orderService.updateOrderStatus(orderId, OrderStatus.PAYMENT_FAILED, "Payment declined");
-                            log.info("Order {} marked as PAYMENT_FAILED", orderId);
-                            // CDC will publish order status change, Product service will release stock
-                        }
-                    }
+                case "PAYMENT_AUTHORIZE_FAILED":
+                    // Payment authorization failed
+                    String reason = eventData.path("reason").asText("Payment declined");
+                    log.info("Payment authorization failed for order {}: {}", orderId, reason);
+                    
+                    // Handle payment failure: update status, send notification, and release stock
+                    // All events (ORDER_STATUS_UPDATED, NOTIFICATION_SEND, STOCK_RESERVE_RELEASE) 
+                    // will be saved to outbox in one transaction
+                    orderService.handlePaymentFailed(orderId, reason);
+                    log.info("✅ Payment failure handled for order {}", orderId);
                     break;
                     
-                case "REFUND":
+                case "PAYMENT_REFUNDED":
                     // Payment refunded
-                    if ("u".equals(operation)) {
-                        JsonNode before = payload.path("before");
-                        String oldStatus = before.path("status").asText();
-                        
-                        if (!"REFUND".equals(oldStatus)) {
-                            orderService.updateOrderStatus(orderId, OrderStatus.REFUNDED, "Payment refunded");
-                            log.info("Order {} marked as REFUNDED", orderId);
-                            // CDC will publish order status change, Product service will release stock
-                        }
-                    }
-                    break;
+                    String refundReason = eventData.path("reason").asText("Customer request");
+                    log.info("Payment refunded for order {}: {}", orderId, refundReason);
                     
-                case "PENDING":
-                    // Payment created, trigger payment authorization
-                    if ("c".equals(operation)) {
-                        orderProducer.publishPaymentAuthorize(orderId, amount);
-                        log.info("Payment authorization triggered for order {}", orderId);
-                    }
+                    // Handle payment refund: update status, send notification, and release stock
+                    // All events (ORDER_STATUS_UPDATED, NOTIFICATION_SEND, STOCK_RESERVE_RELEASE) 
+                    // will be saved to outbox in one transaction
+                    orderService.handlePaymentRefund(orderId, refundReason);
+                    log.info("✅ Payment refund handled for order {}", orderId);
                     break;
                     
                 default:
-                    log.debug("Unhandled payment status: {}", status);
+                    log.debug("Unhandled payment event type: {}", eventType);
             }
             
         } catch (Exception e) {
-            log.error("Error processing payment CDC event", e);
+            log.error("Error processing payment outbox CDC event", e);
         }
     }
 

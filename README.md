@@ -688,6 +688,377 @@ Ctrl+C in each terminal
 
 ---
 
+## 🧪 Testing Scenarios & Flows
+
+This section describes the 4 main business flows and how to test them.
+
+### 📦 Scenario 1: Successful Order (Happy Path)
+
+**Flow:**
+```
+1. User creates order
+   ↓
+2. Order service saves order (PENDING) + ORDER_CREATED event → outbox
+   ↓
+3. Debezium publishes ORDER_CREATED to Kafka
+   ↓
+4. Product service receives event → reserves stock
+   ↓
+5. Product saves STOCK_RESERVE_SUCCEEDED → outbox
+   ↓
+6. Order service receives event → updates to STOCK_RESERVED
+   ↓
+7. Order service publishes PAYMENT_AUTHORIZE → outbox
+   ↓
+8. Payment service receives event → processes payment
+   ↓
+9. Payment saves PAYMENT_AUTHORIZE_SUCCEEDED → outbox
+   ↓
+10. Order service receives event → updates to PAID
+    ↓
+11. Order service publishes NOTIFICATION_SEND → outbox
+    ↓
+12. Notification service receives event → sends notification
+    ↓
+✅ Order completed successfully!
+```
+
+**How to Test:**
+```powershell
+# 1. Create product with sufficient stock
+curl -X POST http://localhost:8080/product-service/api/products `
+  -H "Content-Type: application/json" `
+  -d '{
+    "name": "Laptop",
+    "price": 1500.00,
+    "stock": 10
+  }'
+
+# 2. Create order (amount < 10000 to ensure payment success)
+curl -X POST http://localhost:8080/order-service/api/v1/orders `
+  -H "Content-Type: application/json" `
+  -d '{
+    "userId": 1,
+    "items": [
+      {
+        "productId": 1,
+        "quantity": 2
+      }
+    ]
+  }'
+
+# 3. Check order status (should be PAID)
+curl http://localhost:8080/order-service/api/v1/orders/1
+
+# 4. Check product stock (should be reduced by 2)
+curl http://localhost:8080/product-service/api/v1/products/1
+
+# 5. Check notifications
+curl http://localhost:8080/notification-service/api/v1/notifications/order/1
+
+# 6. Monitor Kafka topics in Kafka UI
+# http://localhost:9095
+```
+
+**Expected Results:**
+- Order status: `PAID`
+- Product stock reduced
+- Payment record created with status `PAID`
+- Notification sent with type `PAYMENT_SUCCESS`
+
+---
+
+### ❌ Scenario 2: Order Failed - Payment Failed
+
+**Flow:**
+```
+1. User creates order
+   ↓
+2-7. Same as Scenario 1 (order created, stock reserved, payment triggered)
+   ↓
+8. Payment service processes payment → FAILS (simulation)
+   ↓
+9. Payment saves PAYMENT_AUTHORIZE_FAILED → outbox
+   ↓
+10. Order service receives event → updates to PAYMENT_FAILED
+    ↓
+11. Order service publishes 2 events to outbox:
+    - NOTIFICATION_SEND (payment failed notification)
+    - STOCK_RESERVE_RELEASE (release reserved stock)
+    ↓
+12. Product service receives STOCK_RESERVE_RELEASE → adds stock back
+    ↓
+13. Notification service receives NOTIFICATION_SEND → sends failure notification
+    ↓
+❌ Order failed, stock released, user notified
+```
+
+**How to Test:**
+```powershell
+# 1. Create product with sufficient stock
+curl -X POST http://localhost:8080/product-service/api/v1/products `
+  -H "Content-Type: application/json" `
+  -d '{
+    "name": "Laptop Pro",
+    "price": 2500.00,
+    "stock": 5
+  }'
+
+# 2. Create order with amount > 10000 (triggers payment failure)
+curl -X POST http://localhost:8080/order-service/api/v1/orders `
+  -H "Content-Type: application/json" `
+  -d '{
+    "userId": 2,
+    "items": [
+      {
+        "productId": 2,
+        "quantity": 5
+      }
+    ]
+  }'
+# Note: 2500 * 5 = 12500 > 10000, so payment will fail
+
+# Alternatively, payment has 20% random failure rate
+# Keep creating orders until one fails
+
+# 3. Check order status (should be PAYMENT_FAILED)
+curl http://localhost:8080/order-service/api/v1/orders/2
+
+# 4. Check product stock (should be restored to original)
+curl http://localhost:8080/product-service/api/v1/products/2
+
+# 5. Check payment status (should be FAILED)
+curl http://localhost:8080/payment-service/api/v1/payments/order/2
+
+# 6. Check notifications (should have PAYMENT_FAILED type)
+curl http://localhost:8080/notification-service/api/v1/notifications/order/2
+```
+
+**Expected Results:**
+- Order status: `PAYMENT_FAILED`
+- Product stock restored (unchanged)
+- Payment record with status `FAILED`
+- Notification sent with type `PAYMENT_FAILED`
+
+---
+
+### 📦❌ Scenario 3: Order Failed - Insufficient Stock
+
+**Flow:**
+```
+1. User creates order
+   ↓
+2. Order service saves order (PENDING) + ORDER_CREATED event → outbox
+   ↓
+3. Debezium publishes ORDER_CREATED to Kafka
+   ↓
+4. Product service receives event → checks stock
+   ↓
+5. Stock insufficient → throws exception
+   ↓
+6. Product saves STOCK_RESERVE_FAILED → outbox
+   ↓
+7. Order service receives event → updates to STOCK_FAILED
+   ↓
+8. Order service publishes NOTIFICATION_SEND → outbox
+   ↓
+9. Notification service receives event → sends failure notification
+   ↓
+❌ Order failed due to insufficient stock
+```
+
+**How to Test:**
+```powershell
+# 1. Create product with low stock
+curl -X POST http://localhost:8080/product-service/api/v1/products `
+  -H "Content-Type: application/json" `
+  -d '{
+    "name": "Limited Edition Phone",
+    "price": 1200.00,
+    "stock": 2
+  }'
+
+# 2. Create order requesting more than available stock
+curl -X POST http://localhost:8080/order-service/api/v1/orders `
+  -H "Content-Type: application/json" `
+  -d '{
+    "userId": 3,
+    "items": [
+      {
+        "productId": 3,
+        "quantity": 5
+      }
+    ]
+  }'
+# Requesting 5 but only 2 available
+
+# 3. Check order status (should be STOCK_FAILED)
+curl http://localhost:8080/order-service/api/v1/orders/3
+
+# 4. Check product stock (should remain unchanged at 2)
+curl http://localhost:8080/product-service/api/v1/products/3
+
+# 5. Check notifications (should have STOCK_RESERVE_FAILED type)
+curl http://localhost:8080/notification-service/api/v1/notifications/order/3
+
+# 6. Verify no payment was created
+curl http://localhost:8080/payment-service/api/v1/payments/order/3
+# Should return empty or 404
+```
+
+**Expected Results:**
+- Order status: `STOCK_FAILED`
+- Product stock unchanged
+- No payment record created
+- Notification sent with type `STOCK_RESERVE_FAILED`
+- Error message: "Insufficient stock for product"
+
+---
+
+### 🔄 Scenario 4: Order Refund (After Successful Payment)
+
+**Flow:**
+```
+1-11. Same as Scenario 1 (successful order with PAID status)
+    ↓
+12. Admin/User initiates refund
+    ↓
+13. Payment service processes refund
+    ↓
+14. Payment saves PAYMENT_REFUNDED → outbox
+    ↓
+15. Order service receives event → updates to REFUNDED
+    ↓
+16. Order service publishes 2 events to outbox:
+    - NOTIFICATION_SEND (refund notification)
+    - STOCK_RESERVE_RELEASE (release stock)
+    ↓
+17. Product service receives STOCK_RESERVE_RELEASE → adds stock back
+    ↓
+18. Notification service receives NOTIFICATION_SEND → sends refund notification
+    ↓
+🔄 Order refunded, stock restored, user notified
+```
+
+**How to Test:**
+```powershell
+# 1. First create a successful order (follow Scenario 1)
+curl -X POST http://localhost:8080/product-service/api/v1/products `
+  -H "Content-Type: application/json" `
+  -d '{
+    "name": "Gaming Console",
+    "price": 500.00,
+    "stock": 10
+  }'
+
+curl -X POST http://localhost:8080/order-service/api/v1/orders `
+  -H "Content-Type: application/json" `
+  -d '{
+    "userId": 4,
+    "items": [
+      {
+        "productId": 4,
+        "quantity": 1
+      }
+    ]
+  }'
+
+# 2. Wait for order to be PAID (check status)
+curl http://localhost:8080/order-service/api/v1/orders/4
+
+# 3. Get payment ID for this order
+curl http://localhost:8080/payment-service/api/v1/payments/order/4
+
+# 4. Process refund (assuming payment ID is 1)
+curl -X POST http://localhost:8080/payment-service/api/v1/payments/1/refund `
+  -H "Content-Type: application/json" `
+  -d '{
+    "reason": "Customer requested refund"
+  }'
+
+# 5. Check order status (should be REFUNDED)
+curl http://localhost:8080/order-service/api/v1/orders/4
+
+# 6. Check product stock (should be restored)
+curl http://localhost:8080/product-service/api/v1/products/4
+
+# 7. Check payment status (should be REFUND)
+curl http://localhost:8080/payment-service/api/v1/payments/1
+
+# 8. Check notifications (should have PAYMENT_REFUND type)
+curl http://localhost:8080/notification-service/api/v1/notifications/order/4
+```
+
+**Expected Results:**
+- Order status: `REFUNDED`
+- Product stock restored (increased by 1)
+- Payment status: `REFUND`
+- Notification sent with type `PAYMENT_REFUND`
+- Notification message includes refund reason
+
+---
+
+## 📊 Monitoring Test Results
+
+### Using Kafka UI
+1. Open http://localhost:9095
+2. Navigate to Topics
+3. View messages in:
+   - `dbserver3.orderdb.outbox` (Order events)
+   - `dbserver1.productdb.outbox` (Product events)
+   - `dbserver2.paymentdb.outbox` (Payment events)
+
+### Using MySQL
+```sql
+-- Connect to MySQL
+docker exec -it database mysql -uroot -proot
+
+-- Check order outbox
+USE orderdb;
+SELECT * FROM outbox ORDER BY created_at DESC LIMIT 10;
+
+-- Check orders
+SELECT id, user_id, status, fail_reason, total_amount FROM orders;
+
+-- Check product outbox
+USE productdb;
+SELECT * FROM outbox ORDER BY created_at DESC LIMIT 10;
+
+-- Check products
+SELECT id, name, stock, price FROM products;
+
+-- Check payment outbox
+USE paymentdb;
+SELECT * FROM outbox ORDER BY created_at DESC LIMIT 10;
+
+-- Check payments
+SELECT id, order_id, amount, status FROM payments;
+
+-- Check notifications
+USE notificationdb;
+SELECT id, order_id, type, message, created_at FROM notifications ORDER BY created_at DESC;
+```
+
+### Checking Logs
+```powershell
+# Order Service logs
+docker logs order-service -f
+
+# Payment Service logs
+docker logs payment-service -f
+
+# Product Service logs
+docker logs product-service -f
+
+# Notification Service logs
+docker logs notification-service -f
+
+# Debezium Connect logs
+docker logs connect -f
+```
+
+---
+
 ## 🎓 Learning Resources
 
 - **Saga Pattern**: https://microservices.io/patterns/data/saga.html

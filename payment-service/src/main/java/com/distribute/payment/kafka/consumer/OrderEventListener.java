@@ -1,22 +1,23 @@
-package com.distribute.payment.service;
+package com.distribute.payment.kafka.consumer;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 import com.distribute.payment.dto.OrderEventDto;
 import com.distribute.payment.dto.PaymentRequestDto;
 import com.distribute.payment.dto.PaymentResponseDto;
 import com.distribute.payment.exception.PaymentProcessingException;
+import com.distribute.payment.service.PaymentService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.extern.slf4j.Slf4j;
 
-@Service
+@Component
 @Slf4j
 public class OrderEventListener {
 
@@ -34,9 +35,11 @@ public class OrderEventListener {
             @Payload String message,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
             @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
-            @Header(KafkaHeaders.OFFSET) long offset) {
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = "eventType", required = false) String eventType) {
 
-        log.info("Received message from topic: {}, partition: {}, offset: {}", topic, partition, offset);
+        log.info("Received message from topic: {}, partition: {}, offset: {}, eventType: {}", 
+                topic, partition, offset, eventType);
         log.debug("Message content: {}", message);
 
         try {
@@ -46,6 +49,11 @@ public class OrderEventListener {
             if (orderEvent == null) {
                 log.warn("Failed to parse order event message: {}", message);
                 return;
+            }
+
+            // Set eventType from Kafka header (Debezium Outbox pattern)
+            if (eventType != null) {
+                orderEvent.setEventType(eventType);
             }
 
             log.info("Parsed order event: eventType={}, orderId={}, amount={}, status={}",
@@ -70,11 +78,16 @@ public class OrderEventListener {
     private OrderEventDto parseOrderEvent(String message) {
         try {
             // Parse Debezium Outbox Router format
-            // Message structure: { "payload": "{...actual event data...}" }
+            // Message structure with expanded JSON: { "schema": {...}, "payload": {...actual event data...} }
             com.fasterxml.jackson.databind.JsonNode rootNode = objectMapper.readTree(message);
             
-            // Check if message has "payload" field (Debezium Outbox format)
-            if (rootNode.has("payload")) {
+            // Check if message has "payload" field (Debezium Outbox format with schema)
+            if (rootNode.has("payload") && rootNode.has("schema")) {
+                // Payload is already expanded as JSON object (not string)
+                com.fasterxml.jackson.databind.JsonNode payloadNode = rootNode.get("payload");
+                return objectMapper.treeToValue(payloadNode, OrderEventDto.class);
+            } else if (rootNode.has("payload")) {
+                // Fallback: payload might be a string
                 String payloadString = rootNode.get("payload").asText();
                 return objectMapper.readValue(payloadString, OrderEventDto.class);
             } else {

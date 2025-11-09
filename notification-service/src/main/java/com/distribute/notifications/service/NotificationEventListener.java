@@ -1,14 +1,15 @@
 package com.distribute.notifications.service;
 
 import com.distribute.notifications.dto.NotificationDto;
-import com.distribute.notifications.dto.OrderEventDto;
-import com.distribute.notifications.dto.PaymentEventDto;
 import com.distribute.notifications.entity.NotificationType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -23,32 +24,59 @@ public class NotificationEventListener {
     /**
      * Listen to Order events from Debezium CDC
      * Topic: outbox.event.Order
+     * Only processes events with eventType = NOTIFICATION_SEND
      */
     @KafkaListener(topics = "outbox.event.Order", groupId = "notification-service-group")
-    public void onOrderEvent(String message) {
-        log.info("Received order event from Debezium CDC");
+    public void onOrderEvent(
+            @Payload String message,
+            @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
+            @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset,
+            @Header(value = "eventType", required = false) String eventType) {
+        
+        log.info("Received order event from topic: {}, partition: {}, offset: {}, eventType: {}", 
+                topic, partition, offset, eventType);
+        log.debug("Message content: {}", message);
         
         try {
-            // Parse Debezium Outbox Router format
+            // ✅ Only process NOTIFICATION_SEND events (from Kafka header)
+            if (!"NOTIFICATION_SEND".equals(eventType)) {
+                log.debug("Skipping event - eventType: {} (not NOTIFICATION_SEND)", eventType);
+                return;
+            }
+            
+            log.info("Processing NOTIFICATION_SEND event");
+            
+            // Parse the payload (already transformed by Debezium Outbox Router)
+            // Message has schema + payload structure, extract payload
             JsonNode rootNode = objectMapper.readTree(message);
+            JsonNode payloadNode;
             
-            // Payload is a JSON string, not an object
-            String payloadString = rootNode.path("payload").asText();
-            OrderEventDto orderEvent = objectMapper.readValue(payloadString, OrderEventDto.class);
+            if (rootNode.has("payload") && rootNode.has("schema")) {
+                // Payload is expanded as JSON object
+                payloadNode = rootNode.get("payload");
+            } else {
+                // Fallback: parse directly
+                payloadNode = rootNode;
+            }
             
-            log.info("Processing order event - Type: {}, OrderId: {}, Status: {}", 
-                    orderEvent.getEventType(), orderEvent.getOrderId(), orderEvent.getStatus());
+            // Extract notification data from payload
+            Integer orderId = payloadNode.path("orderId").asInt();
+            String notificationType = payloadNode.path("type").asText();
+            String notificationMessage = payloadNode.path("message").asText();
+            
+            log.info("Processing notification - OrderId: {}, Type: {}, Message: {}", 
+                    orderId, notificationType, notificationMessage);
 
-            // Create notification based on event type
+            // Create notification
             NotificationDto notification = NotificationDto.builder()
-                    .orderId(orderEvent.getOrderId())
-                    .type(determineNotificationType(orderEvent.getEventType()))
-                    .message(createOrderNotificationMessage(orderEvent.getEventType(), 
-                            orderEvent.getOrderId(), orderEvent.getStatus()))
+                    .orderId(orderId)
+                    .type(mapNotificationType(notificationType))
+                    .message(notificationMessage)
                     .build();
 
             notificationService.createNotification(notification);
-            log.info("Successfully created notification for order event: {}", orderEvent.getEventType());
+            log.info("✅ Successfully created notification for order: {}", orderId);
 
         } catch (Exception e) {
             log.error("Error processing order event: {}", message, e);
@@ -56,104 +84,22 @@ public class NotificationEventListener {
     }
 
     /**
-     * Listen to Payment events from Debezium CDC
-     * Topic: dbserver1.payment_db.payments (example - adjust based on your Debezium config)
+     * Map notification type from payload to NotificationType enum
      */
-    @KafkaListener(topics = "${kafka.topics.payment-cdc:outbox.event.Payment}", groupId = "notification-service-group")
-    public void onPaymentEvent(String message) {
-        log.info("Received payment event from Debezium CDC");
-        
-        try {
-            JsonNode rootNode = objectMapper.readTree(message);
-            JsonNode payload = rootNode.path("payload");
-            
-            // For Debezium CDC, check operation type
-            String operation = rootNode.path("op").asText(); // c=create, u=update, d=delete
-            
-            if ("c".equals(operation) || "u".equals(operation)) {
-                JsonNode after = payload.path("after");
-                
-                Integer paymentId = after.path("id").asInt();
-                Integer orderId = after.path("order_id").asInt();
-                String status = after.path("status").asText();
-                
-                log.info("Processing payment event - Op: {}, PaymentId: {}, OrderId: {}, Status: {}", 
-                        operation, paymentId, orderId, status);
-
-                // Only send notification for significant status changes
-                if (shouldNotifyPaymentStatus(status)) {
-                    NotificationDto notification = NotificationDto.builder()
-                            .orderId(orderId)
-                            .type(determinePaymentNotificationType(status))
-                            .message(createPaymentNotificationMessage(status, orderId, paymentId))
-                            .build();
-
-                    notificationService.createNotification(notification);
-                    log.info("Successfully created notification for payment status: {}", status);
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("Error processing payment event: {}", message, e);
-        }
-    }
-
-    /**
-     * Determine notification type based on order event type
-     */
-    private String determineNotificationType(String eventType) {
-        return switch (eventType) {
+    private String mapNotificationType(String type) {
+        return switch (type) {
             case "ORDER_CREATED" -> NotificationType.ORDER_CONFIRMATION.name();
             case "ORDER_CONFIRMED" -> NotificationType.ORDER_CONFIRMATION.name();
             case "ORDER_CANCELLED" -> NotificationType.ORDER_CANCELLATION.name();
             case "ORDER_COMPLETED" -> NotificationType.ORDER_COMPLETION.name();
             case "ORDER_FAILED" -> NotificationType.ORDER_FAILURE.name();
+            case "PAYMENT_FAILED" -> NotificationType.PAYMENT_FAILURE.name();
+            case "PAYMENT_SUCCEEDED" -> NotificationType.PAYMENT_SUCCESS.name();
             default -> NotificationType.GENERAL.name();
         };
     }
 
-    /**
-     * Determine notification type based on payment status
-     */
-    private String determinePaymentNotificationType(String status) {
-        return switch (status) {
-            case "PAID" -> NotificationType.PAYMENT_SUCCESS.name();
-            case "FAILED" -> NotificationType.PAYMENT_FAILURE.name();
-            case "REFUND" -> NotificationType.PAYMENT_REFUND.name();
-            default -> NotificationType.GENERAL.name();
-        };
-    }
 
-    /**
-     * Check if payment status change requires notification
-     */
-    private boolean shouldNotifyPaymentStatus(String status) {
-        return "PAID".equals(status) || "FAILED".equals(status) || "REFUND".equals(status);
-    }
 
-    /**
-     * Create notification message for order events
-     */
-    private String createOrderNotificationMessage(String eventType, Integer orderId, String status) {
-        return switch (eventType) {
-            case "ORDER_CREATED" -> String.format("Order #%d has been created successfully", orderId);
-            case "ORDER_CONFIRMED" -> String.format("Order #%d has been confirmed", orderId);
-            case "ORDER_CANCELLED" -> String.format("Order #%d has been cancelled", orderId);
-            case "ORDER_COMPLETED" -> String.format("Order #%d has been completed", orderId);
-            case "ORDER_FAILED" -> String.format("Order #%d has failed", orderId);
-            default -> String.format("Order #%d - Status: %s", orderId, status);
-        };
-    }
 
-    /**
-     * Create notification message for payment events
-     */
-    private String createPaymentNotificationMessage(String status, Integer orderId, Integer paymentId) {
-        return switch (status) {
-            case "PAID" -> String.format("Payment successful for order #%d", orderId);
-            case "FAILED" -> String.format("Payment failed for order #%d. Please try again", orderId);
-            case "REFUND" -> String.format("Refund processed for order #%d", orderId);
-            default -> String.format("Payment #%d - Status: %s", paymentId, status);
-        };
-    }
 }
