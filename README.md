@@ -748,10 +748,10 @@ curl -X POST http://localhost:8080/order-service/api/v1/orders `
   }'
 
 # 3. Check order status (should be PAID)
-curl http://localhost:8080/order-service/api/v1/orders/1
+curl http://localhost:8080/order-service/api/v1/orders/users/1
 
 # 4. Check product stock (should be reduced by 2)
-curl http://localhost:8080/product-service/api/v1/products/1
+curl http://localhost:8080/product-service/api/products
 
 # 5. Check notifications
 curl http://localhost:8080/notification-service/api/v1/notifications/order/1
@@ -796,10 +796,12 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/1
 **How to Test:**
 ```powershell
 # 1. Create product with sufficient stock
-curl -X POST http://localhost:8080/product-service/api/v1/products `
+# Create product with sufficient stock
+curl -X POST http://localhost:8080/product-service/api/products `
   -H "Content-Type: application/json" `
   -d '{
     "name": "Laptop Pro",
+    "description": "High-performance laptop",
     "price": 2500.00,
     "stock": 5
   }'
@@ -822,10 +824,10 @@ curl -X POST http://localhost:8080/order-service/api/v1/orders `
 # Keep creating orders until one fails
 
 # 3. Check order status (should be PAYMENT_FAILED)
-curl http://localhost:8080/order-service/api/v1/orders/2
+curl http://localhost:8080/order-service/api/v1/orders/users/2
 
 # 4. Check product stock (should be restored to original)
-curl http://localhost:8080/product-service/api/v1/products/2
+curl http://localhost:8080/product-service/api/products
 
 # 5. Check payment status (should be FAILED)
 curl http://localhost:8080/payment-service/api/v1/payments/order/2
@@ -870,7 +872,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/2
 **How to Test:**
 ```powershell
 # 1. Create product with low stock
-curl -X POST http://localhost:8080/product-service/api/v1/products `
+curl -X POST http://localhost:8080/product-service/api/products `
   -H "Content-Type: application/json" `
   -d '{
     "name": "Limited Edition Phone",
@@ -893,10 +895,10 @@ curl -X POST http://localhost:8080/order-service/api/v1/orders `
 # Requesting 5 but only 2 available
 
 # 3. Check order status (should be STOCK_FAILED)
-curl http://localhost:8080/order-service/api/v1/orders/3
+curl http://localhost:8080/order-service/api/v1/orders/users/3
 
 # 4. Check product stock (should remain unchanged at 2)
-curl http://localhost:8080/product-service/api/v1/products/3
+curl http://localhost:8080/product-service/api/products
 
 # 5. Check notifications (should have STOCK_RESERVE_FAILED type)
 curl http://localhost:8080/notification-service/api/v1/notifications/order/3
@@ -943,7 +945,7 @@ curl http://localhost:8080/payment-service/api/v1/payments/order/3
 **How to Test:**
 ```powershell
 # 1. First create a successful order (follow Scenario 1)
-curl -X POST http://localhost:8080/product-service/api/v1/products `
+curl -X POST http://localhost:8080/product-service/api/products `
   -H "Content-Type: application/json" `
   -d '{
     "name": "Gaming Console",
@@ -964,23 +966,24 @@ curl -X POST http://localhost:8080/order-service/api/v1/orders `
   }'
 
 # 2. Wait for order to be PAID (check status)
-curl http://localhost:8080/order-service/api/v1/orders/4
+curl http://localhost:8080/order-service/api/v1/orders/users/4
 
 # 3. Get payment ID for this order
 curl http://localhost:8080/payment-service/api/v1/payments/order/4
 
 # 4. Process refund (assuming payment ID is 1)
-curl -X POST http://localhost:8080/payment-service/api/v1/payments/1/refund `
+curl -X POST http://localhost:8080/payment-service/api/v1/payments/refund `
   -H "Content-Type: application/json" `
   -d '{
-    "reason": "Customer requested refund"
+    "paymentId": 18,
+    "reason": "Customer request"
   }'
 
 # 5. Check order status (should be REFUNDED)
-curl http://localhost:8080/order-service/api/v1/orders/4
+curl http://localhost:8080/order-service/api/v1/orders/users/4
 
 # 6. Check product stock (should be restored)
-curl http://localhost:8080/product-service/api/v1/products/4
+curl http://localhost:8080/product-service/api/products
 
 # 7. Check payment status (should be REFUND)
 curl http://localhost:8080/payment-service/api/v1/payments/1
