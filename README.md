@@ -72,23 +72,23 @@ A microservices-based distributed system implementing the **Saga Choreography Pa
 
 ### Infrastructure Services
 
-| Service | Port | Description | Image |
-|---------|------|-------------|-------|
-| **MySQL Database** | 3306 | Shared MySQL instance with binlog enabled for CDC | `mysql:8.0` |
-| **Kafka Broker** | 9092 (internal)<br>9094 (external) | Apache Kafka (KRaft mode, no Zookeeper) | `apache/kafka:3.9.1` |
-| **Kafka UI** | 9095 | Web UI for Kafka visualization | `provectuslabs/kafka-ui:latest` |
-| **Debezium Connect** | 8083 | Kafka Connect with Debezium for CDC | `debezium/connect:2.7.3.Final` |
+| Service              | Port                               | Description                                       | Image                           |
+| -------------------- | ---------------------------------- | ------------------------------------------------- | ------------------------------- |
+| **MySQL Database**   | 3306                               | Shared MySQL instance with binlog enabled for CDC | `mysql:8.0`                     |
+| **Kafka Broker**     | 9092 (internal)<br>9094 (external) | Apache Kafka (KRaft mode, no Zookeeper)           | `apache/kafka:3.9.1`            |
+| **Kafka UI**         | 9095                               | Web UI for Kafka visualization                    | `provectuslabs/kafka-ui:latest` |
+| **Debezium Connect** | 8083                               | Kafka Connect with Debezium for CDC               | `debezium/connect:2.7.3.Final`  |
 
 ### Application Services
 
-| Service | Port | Description | Docker Image |
-|---------|------|-------------|--------------|
-| **Discovery Server** | 8761 | Eureka service registry | `hogiathang/distributed-eureka-server` |
-| **API Gateway** | 8080 | Spring Cloud Gateway for routing | `hogiathang/distributed-gateway-service` |
-| **Order Service** | 8081 | Manages orders with outbox pattern | Built from source |
-| **Payment Service** | 8085 | Handles payment processing | Built from source |
-| **Product Service** | 8084 | Manages product inventory | Built from source |
-| **Notification Service** | 8082 | Sends notifications based on events | Built from source |
+| Service                  | Port | Description                         | Docker Image                             |
+| ------------------------ | ---- | ----------------------------------- | ---------------------------------------- |
+| **Discovery Server**     | 8761 | Eureka service registry             | `hogiathang/distributed-eureka-server`   |
+| **API Gateway**          | 8080 | Spring Cloud Gateway for routing    | `hogiathang/distributed-gateway-service` |
+| **Order Service**        | 8081 | Manages orders with outbox pattern  | Built from source                        |
+| **Payment Service**      | 8085 | Handles payment processing          | Built from source                        |
+| **Product Service**      | 8084 | Manages product inventory           | Built from source                        |
+| **Notification Service** | 8082 | Sends notifications based on events | Built from source                        |
 
 ---
 
@@ -191,6 +191,7 @@ docker-compose up -d
 ```
 
 This starts:
+
 - MySQL with 4 databases (orderdb, paymentdb, productdb, notificationdb)
 - Kafka broker (KRaft mode)
 - Kafka UI
@@ -253,6 +254,7 @@ If using Docker images, services are already running. If running locally:
 **Start in this order:**
 
 1. **Discovery Server** (Port 8761)
+
    ```powershell
    cd discovery-server
    .\mvnw spring-boot:run
@@ -261,24 +263,28 @@ If using Docker images, services are already running. If running locally:
 2. Wait for Discovery Server to be ready, then start business services:
 
    **Order Service** (Port 8081)
+
    ```powershell
    cd order-server
    .\mvnw spring-boot:run
    ```
 
    **Payment Service** (Port 8085)
+
    ```powershell
    cd payment-service
    .\mvnw spring-boot:run
    ```
 
    **Product Service** (Port 8084)
+
    ```powershell
    cd product-service
    .\mvnw spring-boot:run
    ```
 
    **Notification Service** (Port 8082)
+
    ```powershell
    cd notification-service
    .\mvnw spring-boot:run
@@ -293,18 +299,23 @@ If using Docker images, services are already running. If running locally:
 ### Step 5: Verify System is Running
 
 **Check Eureka Dashboard:**
+
 ```
-http://localhost:8761
+http://discovery-client:8761
 ```
+
 All services should be registered.
 
 **Check Kafka UI:**
+
 ```
 http://localhost:9095
 ```
+
 View topics and messages.
 
 **Health Check:**
+
 ```powershell
 # Via Gateway
 curl http://localhost:8080/actuator/health
@@ -313,7 +324,7 @@ curl http://localhost:8080/actuator/health
 curl http://localhost:8081/actuator/health  # Order
 curl http://localhost:8082/api/v1/notifications/health  # Notification
 curl http://localhost:8085/actuator/health  # Payment
-curl http://localhost:8084/actuator/health  # Product
+curl http://product-service:8084/actuator/health  # Product
 ```
 
 ---
@@ -321,6 +332,7 @@ curl http://localhost:8084/actuator/health  # Product
 ## 🌐 Service Endpoints
 
 ### API Gateway (Port 8080)
+
 All requests should go through the gateway:
 
 ```
@@ -329,15 +341,16 @@ http://localhost:8080/{service-name}/{endpoint}
 
 ### Order Service
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/orders` | Create new order |
-| GET | `/api/v1/orders` | Get all orders |
-| GET | `/api/v1/orders/{id}` | Get order by ID |
-| PUT | `/api/v1/orders/{id}` | Update order |
-| DELETE | `/api/v1/orders/{id}` | Delete order |
+| Method | Endpoint              | Description      |
+| ------ | --------------------- | ---------------- |
+| POST   | `/api/v1/orders`      | Create new order |
+| GET    | `/api/v1/orders`      | Get all orders   |
+| GET    | `/api/v1/orders/{id}` | Get order by ID  |
+| PUT    | `/api/v1/orders/{id}` | Update order     |
+| DELETE | `/api/v1/orders/{id}` | Delete order     |
 
 **Example: Create Order**
+
 ```powershell
 curl -X POST http://localhost:8080/order-service/api/v1/orders `
   -H "Content-Type: application/json" `
@@ -351,14 +364,15 @@ curl -X POST http://localhost:8080/order-service/api/v1/orders `
 
 ### Payment Service
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/payments` | Process payment |
-| GET | `/api/v1/payments` | Get all payments |
-| GET | `/api/v1/payments/{id}` | Get payment by ID |
-| GET | `/api/v1/payments/order/{orderId}` | Get payments by order ID |
+| Method | Endpoint                           | Description              |
+| ------ | ---------------------------------- | ------------------------ |
+| POST   | `/api/v1/payments`                 | Process payment          |
+| GET    | `/api/v1/payments`                 | Get all payments         |
+| GET    | `/api/v1/payments/{id}`            | Get payment by ID        |
+| GET    | `/api/v1/payments/order/{orderId}` | Get payments by order ID |
 
 **Example: Process Payment**
+
 ```powershell
 curl -X POST http://localhost:8080/payment-service/api/v1/payments `
   -H "Content-Type: application/json" `
@@ -371,30 +385,32 @@ curl -X POST http://localhost:8080/payment-service/api/v1/payments `
 
 ### Product Service
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/products` | Get all products |
-| GET | `/api/v1/products/{id}` | Get product by ID |
-| POST | `/api/v1/products` | Create product |
-| PUT | `/api/v1/products/{id}` | Update product |
-| PUT | `/api/v1/products/{id}/stock` | Update stock |
+| Method | Endpoint                      | Description       |
+| ------ | ----------------------------- | ----------------- |
+| GET    | `/api/v1/products`            | Get all products  |
+| GET    | `/api/v1/products/{id}`       | Get product by ID |
+| POST   | `/api/v1/products`            | Create product    |
+| PUT    | `/api/v1/products/{id}`       | Update product    |
+| PUT    | `/api/v1/products/{id}/stock` | Update stock      |
 
 **Example: Get Products**
+
 ```powershell
 curl http://localhost:8080/product-service/api/v1/products
 ```
 
 ### Notification Service
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/notifications` | Get all notifications |
-| GET | `/api/v1/notifications/{id}` | Get notification by ID |
-| GET | `/api/v1/notifications/order/{orderId}` | Get notifications by order |
-| GET | `/api/v1/notifications/type/{type}` | Get by type (info/alert/warning/error) |
-| POST | `/api/v1/notifications/create` | Create notification |
+| Method | Endpoint                                | Description                            |
+| ------ | --------------------------------------- | -------------------------------------- |
+| GET    | `/api/v1/notifications`                 | Get all notifications                  |
+| GET    | `/api/v1/notifications/{id}`            | Get notification by ID                 |
+| GET    | `/api/v1/notifications/order/{orderId}` | Get notifications by order             |
+| GET    | `/api/v1/notifications/type/{type}`     | Get by type (info/alert/warning/error) |
+| POST   | `/api/v1/notifications/create`          | Create notification                    |
 
 **Example: Get Notifications**
+
 ```powershell
 curl http://localhost:8080/notification-service/api/v1/notifications
 ```
@@ -408,11 +424,13 @@ curl http://localhost:8080/notification-service/api/v1/notifications
 The system uses **Debezium** for Change Data Capture with the **Outbox Pattern**:
 
 1. **Order Connector** (`order-connector-db2`)
+
    - Monitors: `orderdb.outbox` table
    - Topic prefix: `dbserver2`
    - Uses EventRouter transformation for outbox pattern
 
 2. **Payment Connector** (`payment-connector-db2`)
+
    - Monitors: `paymentdb` database
    - Topic prefix: `dbserver2`
    - Uses ExtractNewRecordState transformation
@@ -432,11 +450,13 @@ The system uses **Debezium** for Change Data Capture with the **Outbox Pattern**
 ### Monitoring Kafka
 
 **Kafka UI** (Recommended):
+
 ```
 http://localhost:9095
 ```
 
 **CLI Commands:**
+
 ```powershell
 # List topics
 docker exec -it broker kafka-topics.sh --bootstrap-server localhost:9092 --list
@@ -460,9 +480,10 @@ docker exec -it broker kafka-topics.sh `
 ### Issue: Services can't connect to Discovery Server
 
 **Solution:**
+
 ```powershell
 # Check if Discovery Server is running
-curl http://localhost:8761
+curl http://discovery-client:8761
 
 # Check logs
 docker logs registry
@@ -474,6 +495,7 @@ docker-compose restart discovery-client
 ### Issue: Kafka Connect not ready
 
 **Solution:**
+
 ```powershell
 # Check Connect status
 curl http://localhost:8083/
@@ -490,6 +512,7 @@ docker-compose restart connect
 ### Issue: MySQL connection refused
 
 **Solution:**
+
 ```powershell
 # Check MySQL is running
 docker ps | findstr database
@@ -507,6 +530,7 @@ docker-compose restart database
 ### Issue: Connectors failed to deploy
 
 **Solution:**
+
 ```powershell
 # Check connector status
 curl http://localhost:8083/connectors/order-connector-db2/status
@@ -525,13 +549,15 @@ docker logs connect -f
 ### Issue: Gateway returns 503 Service Unavailable
 
 **Solution:**
+
 - Wait for all services to register with Eureka (~30 seconds)
-- Check Eureka dashboard: http://localhost:8761
+- Check Eureka dashboard: http://discovery-client:8761
 - Restart Gateway after all services are up
 
 ### Issue: Port already in use
 
 **Solution:**
+
 ```powershell
 # Find process using port (example: 8080)
 netstat -ano | findstr :8080
@@ -634,6 +660,7 @@ a_HPT_Saga_Cho_outbox/
 ### Database Credentials
 
 **MySQL:**
+
 - Host: `localhost:3306`
 - Root Password: `root`
 - User: `db_user`
@@ -642,46 +669,51 @@ a_HPT_Saga_Cho_outbox/
 ### Kafka Configuration
 
 **Bootstrap Servers:**
+
 - Internal (from containers): `broker:9092`
-- External (from host): `localhost:9094`
+- External (from host): `broker:9094`
 
 ### Service Ports
 
-| Service | Port |
-|---------|------|
-| MySQL | 3306 |
-| Discovery Server | 8761 |
-| Gateway | 8080 |
-| Order Service | 8081 |
+| Service              | Port |
+| -------------------- | ---- |
+| MySQL                | 3306 |
+| Discovery Server     | 8761 |
+| Gateway              | 8080 |
+| Order Service        | 8081 |
 | Notification Service | 8082 |
-| Debezium Connect | 8083 |
-| Product Service | 8084 |
-| Payment Service | 8085 |
-| Kafka (external) | 9094 |
-| Kafka UI | 9095 |
+| Debezium Connect     | 8083 |
+| Product Service      | 8084 |
+| Payment Service      | 8085 |
+| Kafka (external)     | 9094 |
+| Kafka UI             | 9095 |
 
 ---
 
 ## 🛑 Stopping the System
 
 ### Stop all infrastructure:
+
 ```powershell
 cd infra
 docker-compose down
 ```
 
 ### Stop and remove volumes (clean state):
+
 ```powershell
 cd infra
 docker-compose down -v
 ```
 
 ### Stop specific service:
+
 ```powershell
 docker-compose stop <service-name>
 ```
 
 ### Stop local Java services:
+
 ```
 Ctrl+C in each terminal
 ```
@@ -695,6 +727,7 @@ This section describes the 4 main business flows and how to test them.
 ### 📦 Scenario 1: Successful Order (Happy Path)
 
 **Flow:**
+
 ```
 1. User creates order
    ↓
@@ -724,6 +757,7 @@ This section describes the 4 main business flows and how to test them.
 ```
 
 **How to Test:**
+
 ```powershell
 # 1. Create product with sufficient stock
 curl -X POST http://localhost:8080/product-service/api/products `
@@ -761,6 +795,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/1
 ```
 
 **Expected Results:**
+
 - Order status: `PAID`
 - Product stock reduced
 - Payment record created with status `PAID`
@@ -771,6 +806,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/1
 ### ❌ Scenario 2: Order Failed - Payment Failed
 
 **Flow:**
+
 ```
 1. User creates order
    ↓
@@ -794,6 +830,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/1
 ```
 
 **How to Test:**
+
 ```powershell
 # 1. Create product with sufficient stock
 curl -X POST http://localhost:8080/product-service/api/v1/products `
@@ -835,6 +872,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/2
 ```
 
 **Expected Results:**
+
 - Order status: `PAYMENT_FAILED`
 - Product stock restored (unchanged)
 - Payment record with status `FAILED`
@@ -845,6 +883,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/2
 ### 📦❌ Scenario 3: Order Failed - Insufficient Stock
 
 **Flow:**
+
 ```
 1. User creates order
    ↓
@@ -868,6 +907,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/2
 ```
 
 **How to Test:**
+
 ```powershell
 # 1. Create product with low stock
 curl -X POST http://localhost:8080/product-service/api/v1/products `
@@ -907,6 +947,7 @@ curl http://localhost:8080/payment-service/api/v1/payments/order/3
 ```
 
 **Expected Results:**
+
 - Order status: `STOCK_FAILED`
 - Product stock unchanged
 - No payment record created
@@ -918,6 +959,7 @@ curl http://localhost:8080/payment-service/api/v1/payments/order/3
 ### 🔄 Scenario 4: Order Refund (After Successful Payment)
 
 **Flow:**
+
 ```
 1-11. Same as Scenario 1 (successful order with PAID status)
     ↓
@@ -941,6 +983,7 @@ curl http://localhost:8080/payment-service/api/v1/payments/order/3
 ```
 
 **How to Test:**
+
 ```powershell
 # 1. First create a successful order (follow Scenario 1)
 curl -X POST http://localhost:8080/product-service/api/v1/products `
@@ -990,6 +1033,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/4
 ```
 
 **Expected Results:**
+
 - Order status: `REFUNDED`
 - Product stock restored (increased by 1)
 - Payment status: `REFUND`
@@ -1001,6 +1045,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/4
 ## 📊 Monitoring Test Results
 
 ### Using Kafka UI
+
 1. Open http://localhost:9095
 2. Navigate to Topics
 3. View messages in:
@@ -1009,6 +1054,7 @@ curl http://localhost:8080/notification-service/api/v1/notifications/order/4
    - `dbserver2.paymentdb.outbox` (Payment events)
 
 ### Using MySQL
+
 ```sql
 -- Connect to MySQL
 docker exec -it database mysql -uroot -proot
@@ -1040,6 +1086,7 @@ SELECT id, order_id, type, message, created_at FROM notifications ORDER BY creat
 ```
 
 ### Checking Logs
+
 ```powershell
 # Order Service logs
 docker logs order-service -f
@@ -1096,4 +1143,4 @@ This project is part of a distributed systems learning initiative.
 ---
 
 **Happy Coding! 🚀**
-"# Saga-Choreography-with-Outbox-Pattern" 
+"# Saga-Choreography-with-Outbox-Pattern"

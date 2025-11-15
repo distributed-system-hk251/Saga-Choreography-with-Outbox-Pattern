@@ -14,21 +14,21 @@ spring:
             - Path=/order-service/**
           filters:
             - RewritePath=/order-service/(?<segment>.*), /$\{segment}
-        
+
         - id: payment-service
           uri: lb://payment-service
           predicates:
             - Path=/payment-service/**
           filters:
             - RewritePath=/payment-service/(?<segment>.*), /$\{segment}
-        
+
         - id: product-service
           uri: lb://product-service
           predicates:
             - Path=/product-service/**
           filters:
             - RewritePath=/product-service/(?<segment>.*), /$\{segment}
-        
+
         - id: notification-service
           uri: lb://notification-service
           predicates:
@@ -44,7 +44,7 @@ server:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka
+      defaultZone: http://discovery-client:8761/eureka
     register-with-eureka: true
     fetch-registry: true
   instance:

@@ -121,12 +121,12 @@ mvn test
 
 ### Environment Variables
 
-| Variable                         | Description       | Default                                      |
-| -------------------------------- | ----------------- | -------------------------------------------- |
-| `SPRING_DATASOURCE_URL`          | Database URL      | `jdbc:mysql://localhost:3309/notificationdb` |
-| `SPRING_DATASOURCE_USERNAME`     | Database username | `root`                                       |
-| `SPRING_DATASOURCE_PASSWORD`     | Database password | `root`                                       |
-| `SPRING_KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers     | `localhost:9092`                             |
+| Variable                         | Description       | Default                                     |
+| -------------------------------- | ----------------- | ------------------------------------------- |
+| `SPRING_DATASOURCE_URL`          | Database URL      | `jdbc:mysql://database:3309/notificationdb` |
+| `SPRING_DATASOURCE_USERNAME`     | Database username | `root`                                      |
+| `SPRING_DATASOURCE_PASSWORD`     | Database password | `root`                                      |
+| `SPRING_KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers     | `localhost:9092`                            |
 
 ### Profiles
 

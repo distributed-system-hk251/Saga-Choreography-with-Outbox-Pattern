@@ -30,7 +30,7 @@ services:
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller 
       - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://broker:9092,EXTERNAL://localhost:9094
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://broker:9092,EXTERNAL://broker:9094
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER 
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@broker:9093 
@@ -82,15 +82,82 @@ services:
   # Config service app: Please run it before run your app
   discovery-client:
     container_name: registry
-    image: hogiathang/distributed-eureka-server
+    build: 
+      context: ../discovery-server
+      dockerfile: docker/Dockerfile
     restart: always
     ports:
       - "8761:8761"
+    volumes:
+      - ../discovery-server:/app
 
-  # Gateway must be run after all services are up in order to register routes correctly
-  gateway:
-    container_name: gateway
-    image: hogiathang/distributed-gateway-service
+
+  # # Gateway must be run after all services are up in order to register routes correctly
+  # gateway:
+  #   container_name: gateway
+  #   build: 
+  #     context: ../docker/gateway
+  #     dockerfile: Dockerfile  
+  #   restart: always
+  #   ports:
+  #     - "8080:8080"
+
+  notification-service:
+    container_name: notification-service
+    build: 
+      context: ../notification-service
+      dockerfile: docker/Dockerfile  
     restart: always
     ports:
-      - "8080:8080"
+      - "8082:8082"
+    depends_on:
+      - discovery-client
+      - database
+      - kafka
+    volumes:
+      - ../notification-service:/app
+
+  order-service:  
+    container_name: order-service
+    build: 
+      context: ../order-service
+      dockerfile: docker/Dockerfile  
+    restart: always
+    ports:
+      - "8081:8081"
+    depends_on:
+      - discovery-client
+      - database
+      - kafka
+    volumes:
+      - ../order-service:/app
+
+  payment-service:
+    container_name: payment-service
+    build: 
+      context: ../payment-service
+      dockerfile: docker/Dockerfile  
+    restart: always
+    ports:
+      - "8085:8085"
+    depends_on:
+      - discovery-client
+      - database
+      - kafka
+    volumes:
+      - ../payment-service:/app
+  
+  product-service:
+    container_name: product-service
+    build: 
+      context: ../product-service
+      dockerfile: docker/Dockerfile  
+    restart: always
+    ports:
+      - "8084:8084"
+    depends_on:
+      - discovery-client
+      - database
+      - kafka
+    volumes:
+      - ../product-service:/app

@@ -3,7 +3,7 @@ spring:
     name: notification-service
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/notificationdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://database:3306/notificationdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
     username: root
     password: root
 
@@ -34,7 +34,7 @@ spring:
       properties:
         spring.json.use.type.headers: false
         spring.json.trusted.packages: "*"
-    bootstrap-servers: localhost:9094
+    bootstrap-servers: broker:9094
 
 # Kafka Topics Configuration
 kafka:
@@ -51,4 +51,4 @@ eureka:
     hostname: localhost
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://discovery-client:8761/eureka/

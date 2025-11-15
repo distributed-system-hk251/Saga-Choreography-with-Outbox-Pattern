@@ -7,16 +7,19 @@ Additionally, it can dynamically load configuration from **Spring Cloud Config S
 ---
 
 ## 🚀 Features
-- Create new orders.  
-- Retrieve list of orders.  
-- Update and manage order status.  
-- Service registration/discovery via **Eureka**.  
-- Dynamic configuration with **Spring Cloud Config Server**.  
+
+- Create new orders.
+- Retrieve list of orders.
+- Update and manage order status.
+- Service registration/discovery via **Eureka**.
+- Dynamic configuration with **Spring Cloud Config Server**.
 
 ---
 
 ## ⚙️ Configuration
+
 ### 1. Using H2 DB
+
 ```
 spring:
   datasource:
@@ -33,12 +36,14 @@ spring:
       ddl-auto: update
     show-sql: true
 ```
+
 ### 2. Using Mysql
+
 ```
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/orderdb
+    url: jdbc:mysql://database:3306/orderdb
     username: <YOUR_USERNAME>
     password: <YOUR_PASSWORD>
   jpa:
@@ -48,6 +53,7 @@ spring:
 ```
 
 ## 📂 Code Structure
+
 ```
 order-service/
 │── pom.xml                        # Maven build file

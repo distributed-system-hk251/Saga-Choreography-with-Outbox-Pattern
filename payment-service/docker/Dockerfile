@@ -1,18 +1,15 @@
-# Stage 1: Build
-FROM maven:3.9.6-eclipse-temurin-21 AS builder
+# --- Development Image ---
+FROM eclipse-temurin:21-jdk
+
 WORKDIR /app
 
-COPY ../pom.xml .
-RUN mvn dependency:go-offline
+# Use cached dependencies for faster rebuilds
+COPY pom.xml .
+RUN mkdir -p /app/src/main/java
+RUN ./mvnw dependency:go-offline || true
 
-COPY .. .
-RUN mvn clean package -DskipTests
+# Copy source code (hot-reload with mounted volume)
+COPY . .
 
-# Stage 2: Production
-FROM eclipse-temurin:21-jre
-WORKDIR /app
 
-COPY --from=builder /app/target/*.jar app.jar
-
-EXPOSE 8085
-ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["./mvnw", "spring-boot:run"]

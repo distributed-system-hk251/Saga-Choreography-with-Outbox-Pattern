@@ -47,10 +47,10 @@ public class OrderServiceImpl implements OrderService {
 
             // Save order to database
             order = orderRepository.save(order);
-            
+
             // ✅ Save event to outbox (Debezium will publish this to Kafka)
             outboxService.saveOrderCreatedEvent(order, requestId);
-            
+
             return order;
         } catch (Exception e) {
             throw new RuntimeException("Failed to create order: " + e.getMessage());
@@ -68,10 +68,10 @@ public class OrderServiceImpl implements OrderService {
 
         // Save order to database
         order = orderRepository.save(order);
-        
+
         // ✅ Save event to outbox (Debezium will publish this to Kafka)
         outboxService.saveOrderUpdatedEvent(order, "system");
-        
+
         return order;
     }
 
@@ -85,24 +85,23 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.PAYMENT_FAILED);
         order.setFailReason(failReason);
         order = orderRepository.save(order);
-        
+
         // ✅ Save ORDER_STATUS_UPDATED event to outbox
         outboxService.saveOrderUpdatedEvent(order, "system");
-        
+
         // ✅ Save NOTIFICATION_SEND event to outbox
         String notificationMessage = String.format(
-            "Payment failed for order #%d. Reason: %s", 
-            orderId, 
-            failReason != null ? failReason : "Unknown"
-        );
+                "Payment failed for order #%d. Reason: %s",
+                orderId,
+                failReason != null ? failReason : "Unknown");
         outboxService.saveNotificationSendEvent(orderId, "PAYMENT_FAILED", notificationMessage, "system");
-        
+
         // ✅ Save STOCK_RESERVE_RELEASE event to outbox
         outboxService.saveStockReserveReleaseEvent(order, "system");
-        
+
         log.info("Payment failed for order {}: {}", orderId, failReason);
         log.info("✅ NOTIFICATION_SEND and STOCK_RESERVE_RELEASE events saved to outbox");
-        
+
         return order;
     }
 
@@ -115,21 +114,20 @@ public class OrderServiceImpl implements OrderService {
         // Update order status to PAID
         order.setStatus(OrderStatus.PAID);
         order = orderRepository.save(order);
-        
+
         // ✅ Save ORDER_STATUS_UPDATED event to outbox
         outboxService.saveOrderUpdatedEvent(order, "system");
-        
+
         // ✅ Save NOTIFICATION_SEND event to outbox
         String notificationMessage = String.format(
-            "Payment successful for order #%d. Total amount: %s. Your order is being processed.", 
-            orderId,
-            order.getTotalAmount()
-        );
+                "Payment successful for order #%d. Total amount: %s. Your order is being processed.",
+                orderId,
+                order.getTotalAmount());
         outboxService.saveNotificationSendEvent(orderId, "PAYMENT_SUCCESS", notificationMessage, "system");
-        
+
         log.info("Payment successful for order {}", orderId);
         log.info("✅ NOTIFICATION_SEND event saved to outbox");
-        
+
         return order;
     }
 
@@ -143,21 +141,20 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.STOCK_FAILED);
         order.setFailReason(failReason);
         order = orderRepository.save(order);
-        
+
         // ✅ Save ORDER_STATUS_UPDATED event to outbox
         outboxService.saveOrderUpdatedEvent(order, "system");
-        
+
         // ✅ Save NOTIFICATION_SEND event to outbox
         String notificationMessage = String.format(
-            "Order #%d cannot be processed. Reason: %s. Please try again later.", 
-            orderId,
-            failReason != null ? failReason : "Stock not available"
-        );
+                "Order #%d cannot be processed. Reason: %s. Please try again later.",
+                orderId,
+                failReason != null ? failReason : "Stock not available");
         outboxService.saveNotificationSendEvent(orderId, "STOCK_RESERVE_FAILED", notificationMessage, "system");
-        
+
         log.info("Stock reservation failed for order {}: {}", orderId, failReason);
         log.info("✅ NOTIFICATION_SEND event saved to outbox");
-        
+
         return order;
     }
 
@@ -171,25 +168,24 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.REFUNDED);
         order.setFailReason(reason);
         order = orderRepository.save(order);
-        
+
         // ✅ Save ORDER_STATUS_UPDATED event to outbox
         outboxService.saveOrderUpdatedEvent(order, "system");
-        
+
         // ✅ Save NOTIFICATION_SEND event to outbox
         String notificationMessage = String.format(
-            "Order #%d has been refunded. Amount: %s. Reason: %s", 
-            orderId,
-            order.getTotalAmount(),
-            reason != null ? reason : "Customer request"
-        );
+                "Order #%d has been refunded. Amount: %s. Reason: %s",
+                orderId,
+                order.getTotalAmount(),
+                reason != null ? reason : "Customer request");
         outboxService.saveNotificationSendEvent(orderId, "PAYMENT_REFUND", notificationMessage, "system");
-        
+
         // ✅ Save STOCK_RESERVE_RELEASE event to outbox
         outboxService.saveStockReserveReleaseEvent(order, "system");
-        
+
         log.info("Payment refunded for order {}: {}", orderId, reason);
         log.info("✅ NOTIFICATION_SEND and STOCK_RESERVE_RELEASE events saved to outbox");
-        
+
         return order;
     }
 
@@ -202,7 +198,7 @@ public class OrderServiceImpl implements OrderService {
         String json = mapper.writeValueAsString(payload);
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:8084/api/products/total_amount")) // <-- adjust path
+                .uri(URI.create("http://product-service:8084/api/products/total_amount")) // <-- adjust path
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
                 .build();
